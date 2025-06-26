@@ -499,13 +499,12 @@
                     <span>Document uploaded successfully</span>
                   </div>
                   <div class="flex space-x-2">
-                    <a 
-                      :href="getDocumentUrl(getCurrentId(), 'taxCertificate')" 
-                      target="_blank" 
+                    <button
+                      @click="viewDocument('taxCertificate')"
                       class="text-blue-600 hover:text-blue-800 text-xs font-medium px-2 py-1 bg-blue-50 rounded"
                     >
                       View
-                    </a>
+                    </button>
                     <button 
                       @click="handleDocumentDelete('taxCertificate')"
                       class="text-red-600 hover:text-red-800 text-xs font-medium px-2 py-1 bg-red-50 rounded"
@@ -563,13 +562,12 @@
                     <span>Document uploaded successfully</span>
                   </div>
                   <div class="flex space-x-2">
-                    <a 
-                      :href="getDocumentUrl(getCurrentId(), 'vetAuthorization')" 
-                      target="_blank" 
+                    <button
+                      @click="viewDocument('vetAuthorization')"
                       class="text-blue-600 hover:text-blue-800 text-xs font-medium px-2 py-1 bg-blue-50 rounded"
                     >
                       View
-                    </a>
+                    </button>
                     <button 
                       @click="handleDocumentDelete('vetAuthorization')"
                       class="text-red-600 hover:text-red-800 text-xs font-medium px-2 py-1 bg-red-50 rounded"
@@ -627,13 +625,12 @@
                     <span>Document uploaded successfully</span>
                   </div>
                   <div class="flex space-x-2">
-                    <a 
-                      :href="getDocumentUrl(getCurrentId(), 'vetContract')" 
-                      target="_blank"
+                    <button
+                      @click="viewDocument('vetContract')"
                       class="text-blue-600 hover:text-blue-800 text-xs font-medium px-2 py-1 bg-blue-50 rounded"
                     >
                       View
-                    </a>
+                    </button>
                     <button 
                       @click="handleDocumentDelete('vetContract')"
                       class="text-red-600 hover:text-red-800 text-xs font-medium px-2 py-1 bg-red-50 rounded"
@@ -691,13 +688,12 @@
                     <span>Document uploaded successfully</span>
                   </div>
                   <div class="flex space-x-2">
-                    <a 
-                      :href="getDocumentUrl(getCurrentId(), 'idCard')" 
-                      target="_blank" 
+                    <button
+                      @click="viewDocument('idCard')"
                       class="text-blue-600 hover:text-blue-800 text-xs font-medium px-2 py-1 bg-blue-50 rounded"
                     >
                       View
-                    </a>
+                    </button>
                     <button 
                       @click="handleDocumentDelete('idCard')"
                       class="text-red-600 hover:text-red-800 text-xs font-medium px-2 py-1 bg-red-50 rounded"
@@ -1181,18 +1177,19 @@ export default {
     },
 
 
-
     async handleDocumentUpload(documentType, event) {
       const file = event.target.files[0];
       if (!file) return;
       
       try {
+        //verifica daca tipul documentului este valid
         const validDocTypes = ['application/pdf', 'image/jpeg', 'image/png'];
         if (!validDocTypes.includes(file.type)) {
           this.errors[documentType] = 'Please upload a valid document file (PDF, JPEG, PNG)';
           return;
         }
         
+        //varifica dimensiunea sa
         if (file.size > 2 * 1024 * 1024) { 
           this.errors[documentType] = 'Document file size must be less than 2MB';
           return;
@@ -1206,7 +1203,7 @@ export default {
         
         this.isUploading[documentType] = true;
         
-        await uploadDocument(Id, documentType, file);
+        await uploadDocument(Id, documentType, file);//*****/
         
         this.documentStatus[documentType] = true;
         
@@ -1446,7 +1443,7 @@ export default {
 
 
     getCurrentId() {
-      return localStorage.getItem('Id') || localStorage.getItem('Id');
+      return localStorage.getItem('Id');
     },
 
 
@@ -1462,8 +1459,52 @@ export default {
     },
     
 
-    getDocumentUrl,
     
+    async viewDocument(documentType) {
+      const shelterId = this.getCurrentId();
+      if (!shelterId) {
+        this.showToast('Shelter ID not found', 'error');
+        return;
+      }
+
+      const token = localStorage.getItem('token'); 
+      if (!token) {
+        this.showToast('Not authenticated', 'error');
+        return;
+      }
+
+      try {
+        const url = getDocumentUrl(shelterId, documentType);  //se construieste un link/URL pt documentul selectat
+        const response = await fetch(url, { //se trimite o cerere GET pt a cere documentul
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+
+        const blob = await response.blob(); //transforma raspunsul primit din backend intr un blob, 
+                                            //adica fisier brut pe care browserul il poate manipula
+        const fileUrl = window.URL.createObjectURL(blob); //se creeaza un link/URL temporar care imbraca acel blob
+                                                          //si permite browserului sa il deschida
+
+        const newTab = window.open(); //se incearca deschiderea unui tab nou in browser
+
+        if (newTab) { //daca s a deschis tabul nou 
+          newTab.location.href = fileUrl; //atunci acel tab este directionat catre URL ul generat mai devreme
+        } else {
+          this.showToast('Pop-up blocked. Please allow pop-ups.', 'error');
+        }
+
+      } catch (err) {
+        console.error('Failed to fetch document:', err);
+        this.showToast('Could not fetch document', 'error');
+      }
+    },
+
     
     goToDashboard() {
       if (this.$router) {

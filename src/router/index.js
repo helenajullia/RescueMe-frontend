@@ -146,7 +146,7 @@ const router = createRouter({
           name: 'shelter-messages',
           component: ShelterMessages,
           meta: { requiresAuth: true, role: 'SHELTER' },
-          props: route => ({
+          props: route => ({ //extrage parametrii din URL de ex ?adopterId=3&adopterName=Maria si ii trimite ca props catre ShelterMessages
             initialRecipientId: route.query.adopterId || route.query.shelterId,
             initialRecipientUsername: route.query.adopterName || route.query.shelterName
           })

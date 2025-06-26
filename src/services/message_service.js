@@ -2,16 +2,20 @@
  * Real-time messaging functionality using WebSockets and REST fallbacks
  */
 
-import { Client } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
+import { Client } from '@stomp/stompjs'; //Biblioteca STOMP pentru JavaScript, folosita pentru trimiterea si primirea de mesaje 
+//prin WebSocket cu protocol STOMP
+import SockJS from 'sockjs-client'; //// Biblioteca SockJS, creeaza conexiuni WebSocket cu fallback 
+// (daca WebSocket nu este suportat de browser sau este blocat in retea).
+
 
 const API_URL = 'http://localhost:8080/api/v1/messages';
 const ATTACHMENT_API_URL = 'http://localhost:8080/api/v1/attachments';
 
+
 // Singleton WebSocket client
-let stompClient = null;
-let messageCallbacks = [];
-let readReceiptCallbacks = [];
+let stompClient = null; //singleton WebSocket client, exista o singura instanta globala de client STOMP
+let messageCallbacks = []; //lista de functii care se apeleaza cand se primeste un mesaj nou
+let readReceiptCallbacks = [];//lista de functii care se apeleaza cand se primeste un read receipt 
 
 /**
  * Function to create authorized headers with JWT token
@@ -34,25 +38,29 @@ const getAuthHeaders = (additionalHeaders = {}) => {
  * @param {Function} onDisconnected - Callback when connection is lost or failed
  */
 export function connectToChat(userId, onConnected, onDisconnected) {
-  if (stompClient && stompClient.active) return;
+  if (stompClient && stompClient.active) return; // Daca clientul WebSocket este deja activ, nu reconectam
 
   console.log("Connecting to chat for user ID:", userId);
 
-  stompClient = new Client({
-    webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
-    reconnectDelay: 5000,
-    heartbeatIncoming: 4000,
-    heartbeatOutgoing: 4000,
-    debug: str => console.log('[CHAT DEBUG]', str),
+  stompClient = new Client({ // Cream un nou client STOMP
+    webSocketFactory: () => new SockJS('http://localhost:8080/ws'), //webSocketFactory este o functie care ii zice lui STOMP cum sa creeze conexiunea WebSocket
+    // Aici ii spunem cum sa se conecteze la server WebSocket:
+    // - Folosim SockJS ca sa faca legatura cu backendul pe adresa /ws
+    // - SockJS incearca prima data WebSocket normal
+    // - Daca WebSocket nu merge (browser vechi), face fallback automat 
+    reconnectDelay: 5000, //daca se pierde conexiunea WebSocket incearca sa se reconecteze automat la 5 sec
+    heartbeatIncoming: 4000, //STOMP asteapta sa primeasca un „semn de viata” de la server o data la 4 sec,
+    //Daca nu primeste, presupune ca s a pierdut conexiunea si va incerca sa o refaca
+    heartbeatOutgoing: 4000, //Clientul (browserul) trimite automat un semnal (heartbeat) catre server o data la 4 sec 
+    //  ca sa arate ca este inca conectat si activ
 
-    onConnect: (frame) => {
+    onConnect: (frame) => { //dupa ce conexiunea WebSocket a fost stabilita
       console.log('[Chat] Connected:', frame);
       
-      stompClient.subscribe(`/topic/chat/${userId}`, (msg) => {
+      stompClient.subscribe(`/topic/chat/${userId}`, (msg) => { //te abonezi la canalul unde vei primi mesaje noi de la alti useri 
         console.log("MESSAGE RECEIVED:", msg);
         try {
-          const parsed = JSON.parse(msg.body);
-          console.log("PARSED MESSAGE:", parsed);
+          const parsed = JSON.parse(msg.body); 
 
           const event = new CustomEvent('new-message', { detail: parsed });
           window.dispatchEvent(event);
@@ -63,7 +71,7 @@ export function connectToChat(userId, onConnected, onDisconnected) {
         }
       });
       
-      stompClient.subscribe(`/topic/read/${userId}`, (receipt) => {
+      stompClient.subscribe(`/topic/read/${userId}`, (receipt) => { //te abonezi la canalul unde vei primi read receipts 
         console.log("READ RECEIPT RECEIVED:", receipt);
         try {
           const parsed = JSON.parse(receipt.body);
@@ -87,7 +95,7 @@ export function connectToChat(userId, onConnected, onDisconnected) {
         }
       });
       
-      onConnected?.();
+      onConnected?.(); //apeleaza onConnected
     },
 
     onStompError: frame => {
@@ -104,7 +112,7 @@ export function connectToChat(userId, onConnected, onDisconnected) {
     }
   });
 
-  stompClient.activate();
+  stompClient.activate(); //Porneste efectiv conexiunea STOMP/WebSocket.
 }
 
 
@@ -123,9 +131,10 @@ export function disconnectFromChat() {
  * @param {Function} callback - Function to call when a message is received
  * @returns {Function} Unsubscribe function to remove the callback
  */
-export function onMessageReceived(callback) {
+export function onMessageReceived(callback) { //Permite altor componente sa se inregistreze ca sa fie anuntate cand vine un mesaj nou.
   console.log("Registering message callback");
-  messageCallbacks.push(callback);
+  messageCallbacks.push(callback); //Salveaza functia callback in lista messageCallbacks,
+  //ca sa fie apelata de fiecare data cand vine un mesaj nou (in connectToChat).
   return () => {
     messageCallbacks = messageCallbacks.filter(cb => cb !== callback);
   };
@@ -159,19 +168,21 @@ export function isConnected() {
  * @param {Object} messageData - Message data to send
  * @returns {Promise<Object>} The sent message data
  */
-export function sendMessage(messageData) {
-  return new Promise((resolve, reject) => {
+export function sendMessage(messageData) { //functie asincrona
+  return new Promise((resolve, reject) => { //care returneaza un promise, adica o operatiune care poate dura si care
+    //se rezolva cu resolve(...) daca merge totul ok, sau cu reject(...) daca apare o eroare
     console.log("Attempting to send message, connection status:", stompClient?.connected);
 
-    if (isConnected()) {
+    if (isConnected()) { //daca conexiunea WebSocket e activa
+      
       try {
         console.log("Sending message via WebSocket:", messageData);
-        stompClient.publish({
-          destination: '/app/chat.send',
-          body: JSON.stringify(messageData)
+
+        stompClient.publish({ //functia prin care trimiti mesaje prin STOMP
+          destination: '/app/chat.send', //Backendul are un handler: @MessageMapping("/chat.send"), deci mesajul va fi preluat de acel @MessageMapping
+          body: JSON.stringify(messageData) //Transforma obiectul JS (messageData) intr-un string JSON (obligatoriu pentru WebSocket)
         });
-        // Resolve directly with the sent data
-        resolve(messageData);
+        resolve(messageData);//Trimiterea a reusit, totul e ok. Rezolvam promisiunea si intoarcem mesajul ca raspuns
       } catch (err) {
         console.error("WebSocket send error:", err);
         console.log("Falling back to REST API for sending message");
@@ -196,13 +207,13 @@ function sendViaRest(messageData, resolve, reject) {
     headers: getAuthHeaders(),
     body: JSON.stringify(messageData)
   })
-  .then(res => {
-    if (!res.ok) {
+  .then(res => { //cand primesti raspunsul verifici daca e ok
+    if (!res.ok) { //Daca nu, returnezi un mesaj de eroare si dai reject la promise
       return Promise.reject(`Failed to send message: ${res.status} ${res.statusText}`);
     }
-    return res.json();
+    return res.json();//Daca da, transformi raspunsul JSON inapoi in obiect JS
   })
-  .then(resolve)
+  .then(resolve)//si dai resolve la promise
   .catch(error => {
     console.error("Error sending message via REST:", error);
     reject(error);
@@ -223,24 +234,20 @@ export function sendMessageWithAttachments(messageData, files) {
     
     const formData = new FormData();
     
-    // Add message as JSON blob
     const messageBlob = new Blob([JSON.stringify(messageData)], { type: 'application/json' });
     formData.append('message', messageBlob);
     
-    // Add files
     if (files && files.length > 0) {
       files.forEach(file => {
         formData.append('files', file);
       });
     }
     
-    // Add authorization token to form data
     const token = localStorage.getItem('token');
     if (token) {
       formData.append('token', token); 
     }
     
-    // Send to server
     fetch(`${API_URL}/send-with-attachments`, {
       method: 'POST',
       headers: {
@@ -350,14 +357,12 @@ export function getUserConversations(userId) {
       const conversationsWithPromises = conversations.map(async conversation => {
         if (!conversation.participantProfilePicture && conversation.participantId) {
           try {
-            // Try to get profile picture for this participant
             const response = await fetch(`http://localhost:8080/users/${conversation.participantId}/profilePicture`, {
               headers: getAuthHeaders()
             });
             if (response.ok) {
               const blob = await response.blob();
               const base64data = await blobToBase64(blob);
-              // Remove data:image prefix
               const base64Clean = base64data.split(',')[1] || base64data;
               conversation.participantProfilePicture = base64Clean;
             }

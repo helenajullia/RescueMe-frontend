@@ -67,7 +67,6 @@ async function registerAdopter(adopterData) {
       headers: {
         "Content-Type": "application/json",
       },
-      // credentials: "include", 
       body: JSON.stringify(adopterData),
     });
 
@@ -92,7 +91,6 @@ async function registerShelter(shelterData) {
       headers: {
         "Content-Type": "application/json",
       },
-      // credentials: "include",
       body: JSON.stringify(shelterData),
     });
 

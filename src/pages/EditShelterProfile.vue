@@ -1701,20 +1701,38 @@ export default {
 
 
 
-    const viewDocument = (documentType) => {
+    const viewDocument = async (documentType) => {
       if (!shelter.id || !documentStatus[documentType]) return;
-      
-      const url = getDocumentUrl(shelter.id, documentType);
-      window.open(url, '_blank');
-    };
 
+      const url = getDocumentUrl(shelter.id, documentType);
+
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch document");
+        }
+
+        const blob = await response.blob();
+        const fileUrl = window.URL.createObjectURL(blob);
+
+        window.open(fileUrl, "_blank");
+        
+      } catch (error) {
+        console.error("Error viewing document:", error);
+      }
+    };
 
     
     const getDocumentUrl = (shelterId, documentType) => {
       return `http://localhost:8080/api/v1/shelters/${shelterId}/documents/${documentType}`;
     };
     
-
 
     const getDocumentTypeName = (documentType) => {
       const typeNames = {

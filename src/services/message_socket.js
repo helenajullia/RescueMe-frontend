@@ -27,10 +27,6 @@ export const connectToMessageSocket = (userId, onMessageCallback) => {
     // Create WebSocket connection using SockJS
     webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
     
-    debug: (str) => {
-      console.log('STOMP message debug:', str);
-    },
-    
     // Reconnection settings
     reconnectDelay: 5000,
     

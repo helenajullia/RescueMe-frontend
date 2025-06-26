@@ -159,17 +159,15 @@ async function uploadDocument(shelterId, documentType, file) {
   }
   
   try {
-    const token = localStorage.getItem("token");
-    const formData = new FormData();
-    formData.append("file", file);
+    const token = localStorage.getItem("token"); // 
+    const formData = new FormData(); // creeaza un FormData care permite construirea corpului unei cereri de tip multipart/form-data
+    formData.append("file", file); // ataseaza fisierul in campul file
     
-    console.log(`Uploading ${documentType} document for shelter ${shelterId}`);
-    console.log(`File name: ${file.name}, type: ${file.type}, size: ${file.size} bytes`);
-    
-    const response = await fetch(`${API_BASE_URL}/shelters/${shelterId}/documents/${documentType}`, {
+    //API_BASE_URL = "http://localhost:8080/api/v1/shelters/${shelterId}/documents/${documentType}"; (DocumentController)
+    const response = await fetch(`${API_BASE_URL}/shelters/${shelterId}/documents/${documentType}`, {   
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${token}`
+        "Authorization": `Bearer ${token}` // adauga token ul in header ul cererii 
       },
       body: formData,
     });
@@ -254,13 +252,13 @@ async function getDocumentStatus(shelterId) {
 }
 
 /**
- * Get URL for downloading a document (with cache-busting)
+ * Get URL for a document 
  * @param {number} shelterId - The ID of the shelter
  * @param {string} documentType - Type of document to get URL for
  * @returns {string} URL for downloading the document
  */
-function getDocumentUrl(shelterId, documentType) {
-  return `${API_BASE_URL}/shelters/${shelterId}/documents/${documentType}?t=${Date.now()}`;
+function getDocumentUrl(shelterId, documentType) { //returneaza URL ul pt descarcarea unui document de un anumit timp
+  return `${API_BASE_URL}/shelters/${shelterId}/documents/${documentType}?t=${Date.now()}`; // prin query param ul asta se evita cache ul din browser
 }
 
 

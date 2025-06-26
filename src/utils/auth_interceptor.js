@@ -23,33 +23,28 @@ export function setupAuthInterceptor() {
         if (isPublicUrl(url)) {
             return originalFetch(url, options);
         }
-        
+
         let token = localStorage.getItem('token');
-        
+
         if (!token || isTokenExpired()) {
             token = await refreshAccessToken();
         }
-        
+
         const updatedOptions = {
             ...options,
-            credentials: 'include'  // cookies
-        };
-        
-        // authorization header
-        if (token) {
-            updatedOptions.headers = {
-                ...updatedOptions.headers,
+            headers: {
+                ...(options.headers || {}),
                 'Authorization': `Bearer ${token}`
-            };
-        }
-        
+            }
+        };
+
         try {
             const response = await originalFetch(url, updatedOptions);
-            
+
             if (response.status === 401) {
                 try {
                     token = await refreshAccessToken();
-                    
+
                     const retryOptions = {
                         ...updatedOptions,
                         headers: {
@@ -57,19 +52,17 @@ export function setupAuthInterceptor() {
                             'Authorization': `Bearer ${token}`
                         }
                     };
-                    
+
                     return originalFetch(url, retryOptions);
                 } catch (error) {
-                    return response; 
+                    return response;
                 }
             }
-            
+
             return response;
         } catch (error) {
             console.error('Fetch error:', error);
             throw error;
         }
     };
-    
-    console.log('Auth interceptor setup complete');
 }

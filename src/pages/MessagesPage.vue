@@ -30,9 +30,13 @@ export default {
     const route = useRoute();
     const currentUserRole = localStorage.getItem('Role');
     
-    const recipientId = ref(null);
-    const recipientName = ref(null);
+    const recipientId = ref(null); //id ul utilizatorului cu care urmeaza sa pornesti o conversatie
+    const recipientName = ref(null); // si username ul lui
+    //sunt trimise ca props in Messaging.vue unde sunt folosite ca sa se intializeze conversatia
+    //sunt completate mai jos la OnMounted in functie de query ul URL si id ul utilizatorului
     
+    //cand se deschide pagina /messages, se uita in URL ca sa vada cu cine vrei sa vorbesti
+    //stie sa inceapa chat u in functie de rolul din localStorage si parametrii din URL
     onMounted(() => {
       if (currentUserRole === 'SHELTER' && route.query.adopterId) {
         recipientId.value = route.query.adopterId;

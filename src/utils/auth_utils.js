@@ -50,7 +50,7 @@ export async function refreshAccessToken() {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                credentials: 'include', // cookies
+                // credentials: 'include', // cookies
                 body: JSON.stringify({ refreshToken })
             });
             

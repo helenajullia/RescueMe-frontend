@@ -17,7 +17,7 @@
         <div class="relative">
           <input 
             type="text" 
-            v-model="searchQuery"
+            v-model="searchQuery" 
             placeholder="Search conversations..." 
             class="w-full py-2 pl-10 pr-4 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
           />
@@ -386,7 +386,7 @@ import {
 
 export default {
   name: 'Messaging',
-
+  //propsurile sunt date trimise de la o componenta parinte catre una copil pt a o personaliza sau initializa
   props: {
     initialRecipientId: {
       type: [Number, String],
@@ -436,17 +436,19 @@ export default {
     };
     
     
+    //functie care va fi apeleta cand utilizatorul intra pe chat
     const setupChatConnection = () => {
       if (!currentUserId.value) return;
       
       console.log("Setting up chat connection for user:", currentUserId.value);
       
-      return new Promise((resolve) => {
-        connectToChat(
+      return new Promise((resolve) => { //returneaza o promisiune
+        connectToChat( //se apeleaza asta din messaje_service.js care creeaza clientul STOMP si se conecteaza la WebSocket
           currentUserId.value,
-          async () => {
+          async () => {//callback care se executa cand conexiunea WebSocket este stabilita
             console.log('Chat WebSocket connected successfully');
             
+            //calback urile pt WebSocket, adica zic ce functii sa se execute 
             messageCallback.value = onMessageReceived(handleNewMessage);
             readReceiptCallback.value = onReadReceipt(handleReadReceipt);
             
@@ -473,6 +475,91 @@ export default {
       if (readReceiptCallback.value) {
         readReceiptCallback.value();
         readReceiptCallback.value = null;
+      }
+    };
+
+    //trimiterea unui mesaj cu optimistic ui, adica afiseaza imediat mesajul in chat, fara sa astepte confirmarea serverului
+    const sendMessage = async () => {
+      if (!canSendMessage.value || !selectedConversationId.value) return;
+      
+      try {
+        // se construieste obiectul mesajului
+        const messageData = {
+          senderId: currentUserId.value,
+          recipientId: selectedConversation.value.participantId,
+          content: newMessage.value.trim(),
+          conversationId: selectedConversationId.value,
+          type: 'TEXT'
+        };
+        
+
+        if (selectedFiles.value.length > 0) { //daca sunt fisiere atasate
+          const optimisticMessage = { //creeaza un mesaj optimist
+            ...messageData,
+            id: `temp-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            read: false,
+            senderUsername: localStorage.getItem('username') || 'You',
+            attachments: selectedFiles.value.map((file, index) => ({
+              id: `temp-attachment-${index}`,
+              fileName: file.name,
+              contentType: file.type,
+              fileSize: file.size,
+              hasThumbnail: file.type.startsWith('image/')
+            })),
+            type: determineMessageType(selectedFiles.value)
+          };
+          
+          messages.value = [...messages.value, optimisticMessage]; //afiseaza mesajul
+          scrollToBottom();
+          
+          //trimite efectiv mesajul si fisierele la server
+          const response = await apiSendMessageWithAttachments(messageData, selectedFiles.value);
+          
+          //daca serverul a raspuns cu un mesaj real, inlocuieste mesajul temporar
+          const index = messages.value.findIndex(m => m.id === optimisticMessage.id);
+          if (index !== -1) {
+            const updatedMessages = [...messages.value];
+            updatedMessages[index] = response;
+            messages.value = updatedMessages;
+          }
+          
+          // actualizeaza lista de conversatii cu ultimul mesaj
+          updateConversationWithMessage(response);
+          
+          await fetchConversations();
+          
+          selectedFiles.value = [];
+
+        } else { //daca e doar mesaj text
+          const optimisticMessage = {
+            ...messageData,
+            id: `temp-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            read: false,
+            senderUsername: localStorage.getItem('username') || 'You',
+          };
+          
+          messages.value = [...messages.value, optimisticMessage];
+          scrollToBottom();
+          
+          const response = await apiSendMessage(messageData);
+          
+          const index = messages.value.findIndex(m => m.id === optimisticMessage.id);
+          if (index !== -1) {
+            const updatedMessages = [...messages.value];
+            updatedMessages[index] = response;
+            messages.value = updatedMessages;
+          }
+          
+          updateConversationWithMessage(response);
+          
+          await fetchConversations();
+        }
+        
+        newMessage.value = '';
+      } catch (error) {
+        console.error('Error sending message:', error);
       }
     };
     
@@ -596,24 +683,30 @@ export default {
     };
     
 
-
+    // actualizeaza lista de conversatii atunci cand vine un mesaj nou, ca sa se vada imediat in interfata ce s-a schimbat
+    // se modifica ultimul mesaj, ora, daca e necitit, si se aduce conversatia in top
     const updateConversationWithMessage = (message) => {
       console.log("Updating conversation with message:", message);
       
+      // cauta in lista de conversatii daca exista deja conversatia cu acel conversationId
       const existingConversationIndex = conversations.value.findIndex(
         conv => conv.conversationId === message.conversationId
       );
       
+      // daca nu o gaseste, inseamna ca e o conversatie noua, deci reincarca toata lista din backend si iese din functie
       if (existingConversationIndex === -1) {
         console.log("New conversation detected, refreshing conversation list");
         fetchConversations();
         return;
       }
       
+      // copiaza lista de conversatii si extrage conversatia curenta, ca sa poata fi modificata fara sa se strice reactia vue
       const updatedConversations = [...conversations.value];
       const existing = {...updatedConversations[existingConversationIndex]};
       
+      // foloseste textul mesajului ca preview pentru conversatie
       let lastMessagePreview = message.content;
+      // daca nu e mesaj text si are atasamente, pregateste un preview
       if (message.type !== 'TEXT' && message.attachments && message.attachments.length > 0) {
         const attachmentCount = message.attachments.length;
         
@@ -638,9 +731,11 @@ export default {
         }
       }
       
+      // actualizeaza ultimul mesaj si ora pentru conversatia respectiva
       existing.lastMessage = lastMessagePreview;
       existing.lastMessageTime = message.timestamp;
       
+      // daca mesajul e pentru utilizatorul curent si conversatia nu e deschisa, marcheaza-o ca avand mesaje necitite
       if (message.recipientId === currentUserId.value) {
         if (selectedConversationId.value !== message.conversationId) {
           existing.unreadCount = (existing.unreadCount || 0) + 1;
@@ -648,10 +743,12 @@ export default {
         }
       }
       
+      // muta conversatia modificata pe primul loc in lista, ca sa para cea mai recenta
       updatedConversations.splice(existingConversationIndex, 1);
       updatedConversations.unshift(existing);
       conversations.value = updatedConversations;
       
+      // daca utilizatorul are deschisa acea conversatie, o actualizeaza si in detalii
       if (selectedConversationId.value === message.conversationId) {
         selectedConversation.value = existing;
       }
@@ -663,9 +760,13 @@ export default {
       try {
         loading.value = true;
         
+        // cauta daca exista conversatii salvate in localstorage
         const cachedConversations = localStorage.getItem('cachedConversations');
+
+        // daca exista cache si lista actuala de conversatii este goala, foloseste cache-ul temporar pentru a popula interfața 
         if (cachedConversations && conversations.value.length === 0) {
           try {
+            // incearca sa converteasca cache-ul din text in obiecte js si seteaza conversations.value cu aceste conversatii
             conversations.value = JSON.parse(cachedConversations);
             loading.value = false;
           } catch (e) {
@@ -673,14 +774,21 @@ export default {
           }
         }
         
+        // apeleaza o functie care cere de la backend lista reala de conversatii 
         const data = await getUserConversations(currentUserId.value);
         
+        // salveaza id-ul conversatiei care e deja selectata, daca e
         const currentSelectedId = selectedConversationId.value;
         
+        // actualizeaza lista de conversatii cu ce a venit de la server
         conversations.value = data;
         
+        // salveaza noua conversatie in cache, in localstorage, ca string json
         localStorage.setItem('cachedConversations', JSON.stringify(data));
         
+        // verifica daca conversatia care era selectata inainte de actualizarea listei (de exemplu, dupa un apel catre backend)
+        //  nu mai exista in noua lista de conversatii. daca nu mai exista, dar exista totusi o conversatie cu acelasi 
+        // participant (acelasi user/adopting shelter), atunci o selecteaza automat pe aceea
         if (currentSelectedId && !conversations.value.find(c => c.conversationId === currentSelectedId)) {
           const tempConversation = selectedConversation.value;
           if (tempConversation) {
@@ -769,25 +877,24 @@ export default {
     };
     
 
-    
+    // cand utilizatorul apasa pe o conversatie din lista adica vrea sa o deschida si sa vada mesajele
     const selectConversation = async (conversation) => {
+      // salveaza conversatia selectata in variabilele reactive, ca sa o afiseze in zona principala de chat
       selectedConversationId.value = conversation.conversationId;
       selectedConversation.value = conversation;
       
-      if (isMobileView.value) {
-        showSidebar.value = false;
-      }
-      
+      // cauta in localStorage daca avem mesajele acelei conversatii salvate local, cu cheia messages_<id>
       const cacheKey = `messages_${conversation.conversationId}`;
       const cachedMessages = localStorage.getItem(cacheKey);
       
+      // daca am gasit mesaje salvate local
       if (cachedMessages) {
         try {
           messages.value = JSON.parse(cachedMessages);
           fetchMessagesInBackground(conversation.conversationId);
         } catch (e) {
           console.error('Error parsing message cache:', e);
-          await fetchMessages(conversation.conversationId);
+          await fetchMessages(conversation.conversationId); //daca nu exista mesaje in cache, le luam direct de pe server
         }
       } else {
         await fetchMessages(conversation.conversationId);
@@ -859,87 +966,6 @@ export default {
       }
     };
     
-
-
-    const sendMessage = async () => {
-      if (!canSendMessage.value || !selectedConversationId.value) return;
-      
-      try {
-        const messageData = {
-          senderId: currentUserId.value,
-          recipientId: selectedConversation.value.participantId,
-          content: newMessage.value.trim(),
-          conversationId: selectedConversationId.value,
-          type: 'TEXT'
-        };
-        
-        if (selectedFiles.value.length > 0) {
-          const optimisticMessage = {
-            ...messageData,
-            id: `temp-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            read: false,
-            senderUsername: localStorage.getItem('username') || 'You',
-            attachments: selectedFiles.value.map((file, index) => ({
-              id: `temp-attachment-${index}`,
-              fileName: file.name,
-              contentType: file.type,
-              fileSize: file.size,
-              hasThumbnail: file.type.startsWith('image/')
-            })),
-            type: determineMessageType(selectedFiles.value)
-          };
-          
-          messages.value = [...messages.value, optimisticMessage];
-          scrollToBottom();
-          
-          const response = await apiSendMessageWithAttachments(messageData, selectedFiles.value);
-          
-          const index = messages.value.findIndex(m => m.id === optimisticMessage.id);
-          if (index !== -1) {
-            const updatedMessages = [...messages.value];
-            updatedMessages[index] = response;
-            messages.value = updatedMessages;
-          }
-          
-          updateConversationWithMessage(response);
-          
-          await fetchConversations();
-          
-          selectedFiles.value = [];
-        } else {
-          const optimisticMessage = {
-            ...messageData,
-            id: `temp-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            read: false,
-            senderUsername: localStorage.getItem('username') || 'You',
-          };
-          
-          messages.value = [...messages.value, optimisticMessage];
-          scrollToBottom();
-          
-          const response = await apiSendMessage(messageData);
-          
-          const index = messages.value.findIndex(m => m.id === optimisticMessage.id);
-          if (index !== -1) {
-            const updatedMessages = [...messages.value];
-            updatedMessages[index] = response;
-            messages.value = updatedMessages;
-          }
-          
-          updateConversationWithMessage(response);
-          
-          await fetchConversations();
-        }
-        
-        newMessage.value = '';
-      } catch (error) {
-        console.error('Error sending message:', error);
-      }
-    };
-    
-
     
     const determineMessageType = (files) => {
       if (files.length === 0) return 'TEXT';
@@ -952,6 +978,7 @@ export default {
       return 'DOCUMENT';
     };
     
+    // porneste automat o conversatie in chat atunci cand se intra intr-o pagina cu un destinatar setat
     const initChat = async () => {
       if (!currentUserId.value) {
         console.error("Current user ID is not available");
@@ -967,22 +994,26 @@ export default {
       try {
         console.log("Initializing chat with recipient:", recipientId);
         
+        // verifica daca exista deja o conversatie cu acel utilizator
         const existingConversation = conversations.value.find(
           c => c.participantId === parseInt(recipientId)
         );
 
+        // daca a gasit, o selecteaza si se opreste
         if (existingConversation) {
           console.log("Found existing conversation:", existingConversation);
           selectConversation(existingConversation);
           return;
         }
 
+        // daca nu exista, cere serverului conversationId
         console.log("Creating new conversation with:", recipientId);
-        const conversationId = await getConversationId(
+        const conversationId = await getConversationId( // cere de la backend conversationId dintre cei doi useri
           currentUserId.value, 
           parseInt(recipientId)
         );
 
+        // apoi verifica din nou daca acest id se regaseste deja in conversatii
         const existingById = conversations.value.find(
           c => c.conversationId === conversationId
         );
@@ -991,9 +1022,9 @@ export default {
           console.log("Found conversation by ID:", existingById);
           selectConversation(existingById);
         } else {
-          let recipientData = null;
+          let recipientData = null; //daca nici acum nu gaseste, construieste o conversatie temporara
           try {
-            const response = await fetch(`http://localhost:8080/users/${recipientId}`);
+            const response = await fetch(`http://localhost:8080/users/${recipientId}`); // incearca sa ia datele destinatarului
             if (response.ok) {
               recipientData = await response.json();
             }
@@ -1012,6 +1043,7 @@ export default {
                               (recipientData.role === 'SHELTER' ? 2 : 1) : 
                               (route.query.adopterId ? 1 : 2);
           
+          // creeaza un „dummy” obiect de conversatie
           const tempConversation = {
             conversationId,
             participantId: parseInt(recipientId),
@@ -1024,6 +1056,7 @@ export default {
             participantProfilePicture: recipientData?.profilePicture || null
           };
           
+          // adauga conversatia temporara in lista si o selecteaza
           conversations.value = [tempConversation, ...conversations.value];
           selectConversation(tempConversation);
           

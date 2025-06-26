@@ -454,6 +454,12 @@ export default {
 
   data() {
     return {
+      formData: {
+        username: "",
+        email: "",
+        phoneNumber: "",
+        password: "",
+      },
 
       isAdopter: true,
       showPassword: false,
@@ -465,14 +471,8 @@ export default {
       wrongFormatedEmail: "", // daca lipseste @ sau .
       errorMessageEmail: "", //pt invalid or taken email
       usernameError: "",
-
       phoneNumberError: "",
-      formData: {
-        username: "",
-        email: "",
-        phoneNumber: "",
-        password: "",
-      },
+  
       selectedCounty: '',
       selectedCity: '',
       selectedShelterType: '',
@@ -604,7 +604,7 @@ export default {
           this.isLoading = false;
           return; 
         }
-        
+ 
         if (this.isAdopter) {
           const response = await registerAdopter({
             username: this.formData.username,
